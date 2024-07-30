@@ -750,7 +750,7 @@ int drmRenderer::drmSendHdrMetaData(mfxExtMasteringDisplayColourVolume* displayC
 uint32_t drmRenderer::convertVaFourccToDrmFormat(uint32_t vaFourcc) {
     switch (vaFourcc) {
         case VA_FOURCC_ARGB:
-            return DRM_FORMAT_ARGB8888;
+            return DRM_FORMAT_XRGB8888;
         case VA_FOURCC_NV12:
             return DRM_FORMAT_NV12;
     #if defined(DRM_LINUX_P010_SUPPORT)
@@ -759,7 +759,7 @@ uint32_t drmRenderer::convertVaFourccToDrmFormat(uint32_t vaFourcc) {
     #endif
 
         default:
-            printf("unsupported fourcc\n");
+            printf("unsupported fourcc %x\n",vaFourcc);
             return 0;
     }
 }
