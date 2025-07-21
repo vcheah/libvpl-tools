@@ -107,6 +107,9 @@ public:
     typedef VAStatus (*vaDestroyConfig_type)(VADisplay dpy, VAConfigID config_id);
     typedef VAStatus (*vaDestroyContext_type)(VADisplay dpy, VAContextID context);
 
+    typedef VAStatus (
+        *vaExportSurfaceHandle_type)(VADisplay, VASurfaceID, uint32_t, uint32_t, void*);
+
     VA_Proxy();
     ~VA_Proxy();
 
@@ -131,6 +134,7 @@ public:
     const vaCreateContext_type vaCreateContext;
     const vaDestroyConfig_type vaDestroyConfig;
     const vaDestroyContext_type vaDestroyContext;
+    const vaExportSurfaceHandle_type vaExportSurfaceHandle;
 };
     #endif
 

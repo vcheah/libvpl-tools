@@ -70,6 +70,7 @@ VA_Proxy::VA_Proxy()
           SIMPLE_LOADER_FUNCTION(vaUnmapBuffer),
           SIMPLE_LOADER_FUNCTION(vaSyncSurface),
           SIMPLE_LOADER_FUNCTION(vaDeriveImage),
+          SIMPLE_LOADER_FUNCTION(vaExportSurfaceHandle),
           SIMPLE_LOADER_FUNCTION(vaDestroyImage),
           SIMPLE_LOADER_FUNCTION(vaGetLibFunc),
           SIMPLE_LOADER_FUNCTION(vaAcquireBufferHandle),

@@ -533,6 +533,9 @@ bool drmRenderer::getAllFormatsAndModifiers() {
     for (i = 0; i < planeProps->count_props; i++)
         planePropsInfo[i] = m_drmlib.drmModeGetProperty(m_fd, planeProps->props[i]);
 
+    printf("[NOTE] ************** | RC-CCS: %llx\n", I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS);
+    printf("[NOTE] ************** | MTL-CCS: %llx\n", I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC);
+
     for (i = 0; i < planeProps->count_props; i++) {
         if (strcmp(planePropsInfo[i]->name, "IN_FORMATS"))
             continue;
@@ -545,6 +548,9 @@ bool drmRenderer::getAllFormatsAndModifiers() {
         while (m_drmlib.drmModeFormatModifierBlobIterNext(blob, &iter)) {
             if (iter.mod == DRM_FORMAT_MOD_INVALID)
                 break;
+
+            if (iter.fmt == DRM_FORMAT_ARGB8888)
+                printf("[bkcheah][ARGB] Modifiers: %lx >>>>\n", iter.mod);
 
         #if defined(DRM_LINUX_MODIFIER_TILED4_SUPPORT)
             if ((iter.fmt == DRM_FORMAT_NV12 || iter.fmt == DRM_FORMAT_P010) &&
@@ -787,22 +793,29 @@ void* drmRenderer::acquire(mfxMemId mid) {
     if (vmid->m_buffer_info.mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME) {
         uint32_t bo_handle;
 
-        ret = m_drmintellib.drmPrimeFDToHandle(m_fd, (int)vmid->m_buffer_info.handle, &bo_handle);
+        ret = m_drmintellib.drmPrimeFDToHandle(m_fd,
+                                               (int)vmid->m_prime_desc.objects[0].fd,
+                                               &bo_handle);
         if (ret)
             return NULL;
 
-        for (uint32_t i = 0; i < vmid->m_image.num_planes; i++) {
-            pitches[i] = vmid->m_image.pitches[i];
-            offsets[i] = vmid->m_image.offsets[i];
+        printf("[vince (mod) %lx >>>\n", vmid->m_prime_desc.objects[0].drm_format_modifier);
+
+        for (uint32_t i = 0; i < vmid->m_prime_desc.layers[0].num_planes; i++) {
+            pitches[i] = vmid->m_prime_desc.layers[0].pitch[i];
+            offsets[i] = vmid->m_prime_desc.layers[0].offset[i];
             handles[i] = bo_handle;
 
-            if (VA_FOURCC_NV12 == vmid->m_fourcc
+            if (VA_FOURCC_NV12 == vmid->m_fourcc || VA_FOURCC_ARGB == vmid->m_fourcc
     #if defined(DRM_LINUX_P010_SUPPORT)
                 || VA_FOURCC_P010 == vmid->m_fourcc
     #endif
             ) {
-                flags        = DRM_MODE_FB_MODIFIERS;
-                modifiers[i] = I915_FORMAT_MOD_Y_TILED;
+                flags = DRM_MODE_FB_MODIFIERS;
+                //modifiers[i] = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS;
+                //modifiers[i] = I915_FORMAT_MOD_Y_TILED; // (ORI)
+                modifiers[i] = vmid->m_prime_desc.objects[0].drm_format_modifier;
+
                 if (m_bRequiredTiled4) {
     #if defined(DRM_LINUX_MODIFIER_TILED4_SUPPORT)
                     modifiers[i] = I915_FORMAT_MOD_4_TILED;
@@ -821,8 +834,10 @@ void* drmRenderer::acquire(mfxMemId mid) {
                                                   modifiers,
                                                   &fbhandle,
                                                   flags);
-        if (ret)
+        if (ret) {
+            printf("[bkcheah][sample] (acquire) ERR: AddFB2WithModifiers = %d \n", ret);
             return NULL;
+        }
     }
     else if (vmid->m_buffer_info.mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_KERNEL_DRM) {
         struct drm_gem_open flink_open;

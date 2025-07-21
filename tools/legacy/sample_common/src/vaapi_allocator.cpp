@@ -287,6 +287,12 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
             else if (fourcc == MFX_FOURCC_YUV400) {
                 format = VA_RT_FORMAT_YUV400;
             }
+            else if (fourcc == MFX_FOURCC_RGB4) {
+                attrib[attrCnt].type            = (VASurfaceAttribType)VASurfaceAttribUsageHint;
+                attrib[attrCnt].flags           = VA_SURFACE_ATTRIB_SETTABLE;
+                attrib[attrCnt].value.type      = VAGenericValueTypeInteger;
+                attrib[attrCnt++].value.value.i = VA_SURFACE_ATTRIB_USAGE_HINT_ENCODER;
+            }
 
             va_res = m_libva->vaCreateSurfaces(m_dpy,
                                                format,
@@ -336,6 +342,9 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
         }
     }
 
+    VADRMPRIMESurfaceDescriptor prime_desc = {};
+    //VADRMPRIME3SurfaceDescriptor prime_desc = {};
+
     if ((MFX_ERR_NONE == mfx_res) && (request->Type & MFX_MEMTYPE_EXPORT_FRAME)) {
         if (m_export_mode == vaapiAllocatorParams::DONOT_EXPORT) {
             mfx_res = MFX_ERR_UNKNOWN;
@@ -350,10 +359,23 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
 
                 if (MFX_ERR_NONE != mfx_res)
                     break;
-
+    #if 0
                 va_res = m_libva->vaAcquireBufferHandle(m_dpy,
                                                         vaapi_mids[i].m_image.buf,
                                                         &(vaapi_mids[i].m_buffer_info));
+
+                mfx_res = va_to_mfx_status(va_res);
+		printf("[bkcheah] vaAcq FD: %ld >>\n",vaapi_mids[i].m_buffer_info.handle);
+    #endif
+                va_res = m_libva->vaExportSurfaceHandle(
+                    m_dpy,
+                    surfaces[i],
+                    VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
+                    VA_EXPORT_SURFACE_READ_WRITE | VA_EXPORT_SURFACE_SEPARATE_LAYERS,
+                    &prime_desc);
+
+                vaapi_mids[i].m_buffer_info.handle = prime_desc.objects[0].fd;
+                vaapi_mids[i].m_prime_desc         = prime_desc;
 
                 mfx_res = va_to_mfx_status(va_res);
 

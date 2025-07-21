@@ -26,6 +26,7 @@ struct vaapiMemId {
     mfxU8* m_va_buffer;
     // buffer info to support surface export
     VABufferInfo m_buffer_info;
+    VADRMPRIMESurfaceDescriptor m_prime_desc;
     // pointer to private export data
     void* m_custom;
 };
