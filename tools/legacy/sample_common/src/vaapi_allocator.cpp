@@ -226,6 +226,7 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
     mfxU32 fourcc       = request->Info.FourCC;
     mfxU16 surfaces_num = request->NumFrameSuggested, numAllocated = 0, i = 0;
     bool bCreateSrfSucceeded = false;
+    VADRMPRIMESurfaceDescriptor prime_desc = {};
 
     memset(response, 0, sizeof(mfxFrameAllocResponse));
 
@@ -342,9 +343,6 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
         }
     }
 
-    VADRMPRIMESurfaceDescriptor prime_desc = {};
-    //VADRMPRIME3SurfaceDescriptor prime_desc = {};
-
     if ((MFX_ERR_NONE == mfx_res) && (request->Type & MFX_MEMTYPE_EXPORT_FRAME)) {
         if (m_export_mode == vaapiAllocatorParams::DONOT_EXPORT) {
             mfx_res = MFX_ERR_UNKNOWN;
@@ -374,7 +372,6 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
                     VA_EXPORT_SURFACE_READ_WRITE | VA_EXPORT_SURFACE_SEPARATE_LAYERS,
                     &prime_desc);
 
-                //vaapi_mids[i].m_buffer_info.handle = prime_desc.objects[0].fd;
                 vaapi_mids[i].m_prime_desc = prime_desc;
 
                 mfx_res = va_to_mfx_status(va_res);

@@ -840,69 +840,6 @@ void* drmRenderer::acquire(mfxMemId mid) {
             return NULL;
         }
     }
-    #if 0
-    else if (vmid->m_buffer_info.mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_KERNEL_DRM) {
-        struct drm_gem_open flink_open;
-        struct drm_gem_close flink_close;
-
-        MSDK_ZERO_MEMORY(flink_open);
-        flink_open.name = vmid->m_buffer_info.handle;
-        int ret         = m_drmlib.drmIoctl(m_fd, DRM_IOCTL_GEM_OPEN, &flink_open);
-        if (ret)
-            return NULL;
-
-        for (uint32_t i = 0; i < vmid->m_image.num_planes; i++) {
-            pitches[i] = vmid->m_image.pitches[i];
-            offsets[i] = vmid->m_image.offsets[i];
-            handles[i] = flink_open.handle;
-
-            if (VA_FOURCC_NV12 == vmid->m_fourcc
-        #if defined(DRM_LINUX_P010_SUPPORT)
-                || VA_FOURCC_P010 == vmid->m_fourcc
-        #endif
-            ) {
-                flags        = DRM_MODE_FB_MODIFIERS;
-                modifiers[i] = I915_FORMAT_MOD_Y_TILED;
-                if (m_bRequiredTiled4) {
-        #if defined(DRM_LINUX_MODIFIER_TILED4_SUPPORT)
-                    modifiers[i] = I915_FORMAT_MOD_4_TILED;
-        #endif
-                }
-                else {
-                    struct drm_i915_gem_set_tiling set_tiling;
-                    memset(&set_tiling, 0, sizeof(set_tiling));
-                    set_tiling.handle      = flink_open.handle;
-                    set_tiling.tiling_mode = I915_TILING_Y;
-                    set_tiling.stride      = vmid->m_image.pitches[0];
-                    ret = m_drmlib.drmIoctl(m_fd, DRM_IOCTL_I915_GEM_SET_TILING, &set_tiling);
-                    if (ret) {
-                        printf("DRM_IOCTL_I915_GEM_SET_TILING Failed ret = %d\n", ret);
-                        return NULL;
-                    }
-                }
-            }
-        }
-
-        ret = m_drmlib.drmModeAddFB2WithModifiers(m_fd,
-                                                  vmid->m_image.width,
-                                                  vmid->m_image.height,
-                                                  convertVaFourccToDrmFormat(vmid->m_fourcc),
-                                                  handles,
-                                                  pitches,
-                                                  offsets,
-                                                  modifiers,
-                                                  &fbhandle,
-                                                  flags);
-        if (ret)
-            return NULL;
-
-        MSDK_ZERO_MEMORY(flink_close);
-        flink_close.handle = flink_open.handle;
-        ret                = m_drmlib.drmIoctl(m_fd, DRM_IOCTL_GEM_CLOSE, &flink_close);
-        if (ret)
-            return NULL;
-    }
-    #endif
     else {
         return NULL;
     }
