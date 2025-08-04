@@ -825,9 +825,9 @@ void* drmRenderer::acquire(mfxMemId mid) {
         }
 
         ret = m_drmlib.drmModeAddFB2WithModifiers(m_fd,
-                                                  vmid->m_image.width,
-                                                  vmid->m_image.height,
-                                                  convertVaFourccToDrmFormat(vmid->m_fourcc),
+                                                  vmid->m_prime_desc.width,
+                                                  vmid->m_prime_desc.height,
+                                                  convertVaFourccToDrmFormat(vmid->m_prime_desc.fourcc),
                                                   handles,
                                                   pitches,
                                                   offsets,
