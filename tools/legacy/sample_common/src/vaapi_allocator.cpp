@@ -375,7 +375,7 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
                     &prime_desc);
 
                 //vaapi_mids[i].m_buffer_info.handle = prime_desc.objects[0].fd;
-                vaapi_mids[i].m_prime_desc         = prime_desc;
+                vaapi_mids[i].m_prime_desc = prime_desc;
 
                 mfx_res = va_to_mfx_status(va_res);
 

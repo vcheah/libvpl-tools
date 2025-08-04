@@ -824,21 +824,23 @@ void* drmRenderer::acquire(mfxMemId mid) {
             }
         }
 
-        ret = m_drmlib.drmModeAddFB2WithModifiers(m_fd,
-                                                  vmid->m_prime_desc.width,
-                                                  vmid->m_prime_desc.height,
-                                                  convertVaFourccToDrmFormat(vmid->m_prime_desc.fourcc),
-                                                  handles,
-                                                  pitches,
-                                                  offsets,
-                                                  modifiers,
-                                                  &fbhandle,
-                                                  flags);
+        ret = m_drmlib.drmModeAddFB2WithModifiers(
+            m_fd,
+            vmid->m_prime_desc.width,
+            vmid->m_prime_desc.height,
+            convertVaFourccToDrmFormat(vmid->m_prime_desc.fourcc),
+            handles,
+            pitches,
+            offsets,
+            modifiers,
+            &fbhandle,
+            flags);
         if (ret) {
             printf("[bkcheah][sample] (acquire) ERR: AddFB2WithModifiers = %d \n", ret);
             return NULL;
         }
     }
+    #if 0
     else if (vmid->m_buffer_info.mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_KERNEL_DRM) {
         struct drm_gem_open flink_open;
         struct drm_gem_close flink_close;
@@ -855,16 +857,16 @@ void* drmRenderer::acquire(mfxMemId mid) {
             handles[i] = flink_open.handle;
 
             if (VA_FOURCC_NV12 == vmid->m_fourcc
-    #if defined(DRM_LINUX_P010_SUPPORT)
+        #if defined(DRM_LINUX_P010_SUPPORT)
                 || VA_FOURCC_P010 == vmid->m_fourcc
-    #endif
+        #endif
             ) {
                 flags        = DRM_MODE_FB_MODIFIERS;
                 modifiers[i] = I915_FORMAT_MOD_Y_TILED;
                 if (m_bRequiredTiled4) {
-    #if defined(DRM_LINUX_MODIFIER_TILED4_SUPPORT)
+        #if defined(DRM_LINUX_MODIFIER_TILED4_SUPPORT)
                     modifiers[i] = I915_FORMAT_MOD_4_TILED;
-    #endif
+        #endif
                 }
                 else {
                     struct drm_i915_gem_set_tiling set_tiling;
@@ -900,6 +902,7 @@ void* drmRenderer::acquire(mfxMemId mid) {
         if (ret)
             return NULL;
     }
+    #endif
     else {
         return NULL;
     }
