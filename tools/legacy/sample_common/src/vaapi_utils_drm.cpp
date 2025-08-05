@@ -244,7 +244,8 @@ drmRenderer::drmRenderer(int fd, mfxI32 monitorType)
           m_hdrMetaData({}),
     #endif
           m_bRequiredTiled4(false),
-          m_pCurrentRenderTargetSurface(NULL) {
+          m_pCurrentRenderTargetSurface(NULL),
+          m_gemBo_list() {
     bool res = false;
 
     if (m_drmlib.drmSetClientCap(m_fd, DRM_CLIENT_CAP_ATOMIC, 1) != 0)
@@ -276,12 +277,22 @@ drmRenderer::drmRenderer(int fd, mfxI32 monitorType)
 
     drmSetColorSpace(false);
     drmSendHdrMetaData(NULL, NULL, false);
+
+    m_bufmgr = m_drmintellib.drm_intel_bufmgr_gem_init(m_fd, 4096);
+    if (!m_bufmgr) {
+        throw std::runtime_error("Failed to get buffer manager");
+    }
 }
 
 drmRenderer::~drmRenderer() {
     m_drmlib.drmModeFreeCrtc(m_crtc);
     m_drmlib.drmModeFreeObjectProperties(m_connectorProperties);
     m_drmlib.drmModeFreeObjectProperties(m_crtcProperties);
+
+    if (NULL != m_bufmgr) {
+        printf("@free bufmgr\n");
+        m_drmintellib.drm_intel_bufmgr_destroy(m_bufmgr);
+    }
 
     while (!m_gemBo_list.empty()) {
         printf("bkcheah: call free. DRM. \n");
@@ -813,7 +824,7 @@ void* drmRenderer::acquire(mfxMemId mid) {
     vaapiMemId* vmid = (vaapiMemId*)mid;
 
     uint32_t fbhandle = 0;
-    uint32_t handles[4], pitches[4], offsets[4], flags = 0;
+    uint32_t handles[4], pitches[4], offsets[4];
     uint64_t modifiers[4];
     int ret;
 
@@ -823,8 +834,6 @@ void* drmRenderer::acquire(mfxMemId mid) {
     MSDK_ZERO_MEMORY(modifiers);
 
     if (vmid->m_buffer_info.mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME) {
-        uint32_t bo_handle;
-
         /////////////////////////////////////////////////////////////////////////////////////////
         const uint32_t width = TEST_W, height = TEST_H;
         const uint32_t format = DRM_FORMAT_ARGB8888;
@@ -861,15 +870,49 @@ void* drmRenderer::acquire(mfxMemId mid) {
         }
 
         int prime_fd = -1;
-        if (m_drmintellib.drmPrimeHandleToFD(m_fd, bo_handle, O_RDWR, &prime_fd) == 1) {
+        if (m_drmintellib.drmPrimeHandleToFD(m_fd, bo_handle2, O_RDWR, &prime_fd) < 0) {
             printf("ERR: convert GEM to PRIME failed. \n");
             return NULL;
         }
         printf("[bkcheah] [GEM] Exported PRIME FD = %d\n", prime_fd);
 
         m_gemBo_list.push_back(bo_handle2);
-        /////////////////////////////////////////////////////////////////////////////////////////
 
+    #if TILE_Y
+        uint32_t handles[4]   = { bo_handle2, 0, 0, 0 };
+        uint32_t pitches[4]   = { TEST_PITCH_0, TEST_PITCH_1, 0, 0 };
+        uint32_t offsets[4]   = { 0, TEST_OFFSET_1, 0, 0 };
+        uint64_t modifiers[4] = { modifier, 0, 0, 0 };
+    #else
+        uint32_t handles[4]                     = { bo_handle2, bo_handle2, 0, 0 };
+        uint32_t pitches[4]                     = { TEST_PITCH_0, TEST_PITCH_1, 0, 0 };
+        uint32_t offsets[4]                     = { 0, TEST_OFFSET_1, 0, 0 };
+        uint64_t modifiers[4]                   = { modifier, modifier, 0, 0 };
+    #endif
+
+        vmid->m_prime_desc.width = vmid->m_image.width = width;
+        vmid->m_prime_desc.height = vmid->m_image.height  = height;
+        vmid->m_prime_desc.num_layers                     = 1;
+        vmid->m_prime_desc.fourcc                         = VA_FOURCC_ARGB;
+        vmid->m_prime_desc.objects[0].fd                  = prime_fd;
+        vmid->m_prime_desc.objects[0].size                = total_size;
+        vmid->m_prime_desc.objects[0].drm_format_modifier = modifier;
+        vmid->m_prime_desc.layers[0].drm_format           = format;
+    #if TILE_Y
+        vmid->m_prime_desc.layers[0].num_planes = 1;
+    #else
+        vmid->m_prime_desc.layers[0].num_planes = 2;
+    #endif
+
+        for (unsigned int i = 0; i < vmid->m_prime_desc.layers[0].num_planes; i++) {
+            vmid->m_prime_desc.layers[0].pitch[i]  = pitches[i];
+            vmid->m_prime_desc.layers[0].offset[i] = offsets[i];
+            modifiers[i] = vmid->m_prime_desc.objects[0].drm_format_modifier;
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////
+    #if 0
+        uint32_t bo_handle;
         ret = m_drmintellib.drmPrimeFDToHandle(m_fd,
                                                (int)vmid->m_prime_desc.objects[0].fd,
                                                &bo_handle);
@@ -884,9 +927,9 @@ void* drmRenderer::acquire(mfxMemId mid) {
             handles[i] = bo_handle;
 
             if (VA_FOURCC_NV12 == vmid->m_fourcc || VA_FOURCC_ARGB == vmid->m_fourcc
-    #if defined(DRM_LINUX_P010_SUPPORT)
+        #if defined(DRM_LINUX_P010_SUPPORT)
                 || VA_FOURCC_P010 == vmid->m_fourcc
-    #endif
+        #endif
             ) {
                 flags = DRM_MODE_FB_MODIFIERS;
                 //modifiers[i] = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS;
@@ -894,12 +937,13 @@ void* drmRenderer::acquire(mfxMemId mid) {
                 modifiers[i] = vmid->m_prime_desc.objects[0].drm_format_modifier;
 
                 if (m_bRequiredTiled4) {
-    #if defined(DRM_LINUX_MODIFIER_TILED4_SUPPORT)
+        #if defined(DRM_LINUX_MODIFIER_TILED4_SUPPORT)
                     modifiers[i] = I915_FORMAT_MOD_4_TILED;
-    #endif
+        #endif
                 }
             }
         }
+    #endif
 
         ret = m_drmlib.drmModeAddFB2WithModifiers(
             m_fd,
@@ -911,7 +955,7 @@ void* drmRenderer::acquire(mfxMemId mid) {
             offsets,
             modifiers,
             &fbhandle,
-            flags);
+            DRM_MODE_FB_MODIFIERS);
         if (ret) {
             printf("[bkcheah][sample] (acquire) ERR: AddFB2WithModifiers = %d \n", ret);
             return NULL;

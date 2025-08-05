@@ -287,6 +287,14 @@ public:
     typedef void (*drm_intel_bufmgr_destroy_type)(drm_intel_bufmgr*);
     typedef int (*drmPrimeFDToHandle_type)(int fd, int prime_fd, uint32_t* handle);
     typedef int (*drmPrimeHandleToFD_type)(int fd, uint32_t handle, uint32_t flags, int* prime_fd);
+    typedef drm_intel_bo* (*drm_intel_bo_alloc_tiled_type)(drm_intel_bufmgr* bufmgr,
+                                                           const char* name,
+                                                           int x,
+                                                           int y,
+                                                           int cpp,
+                                                           uint32_t* tiling_mode,
+                                                           unsigned long* pitch,
+                                                           unsigned long flags);
 
     DrmIntel_Proxy();
     ~DrmIntel_Proxy();
@@ -298,6 +306,7 @@ public:
     __DECLARE(drm_intel_bufmgr_destroy);
     __DECLARE(drmPrimeFDToHandle);
     __DECLARE(drmPrimeHandleToFD);
+    __DECLARE(drm_intel_bo_alloc_tiled);
 
         #if defined(X11_DRI3_SUPPORT)
     __DECLARE(drm_intel_bo_gem_export_to_prime);

@@ -219,14 +219,13 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
     VAStatus va_res        = VA_STATUS_SUCCESS;
     unsigned int va_fourcc = 0;
     VASurfaceID* surfaces  = NULL;
-    VASurfaceAttrib attrib[2];
+    VASurfaceAttrib attrib[10];
     unsigned int attrCnt   = 0;
     vaapiMemId *vaapi_mids = NULL, *vaapi_mid = NULL;
     mfxMemId* mids      = NULL;
     mfxU32 fourcc       = request->Info.FourCC;
     mfxU16 surfaces_num = request->NumFrameSuggested, numAllocated = 0, i = 0;
-    bool bCreateSrfSucceeded               = false;
-    VADRMPRIMESurfaceDescriptor prime_desc = {};
+    bool bCreateSrfSucceeded = false;
 
     memset(response, 0, sizeof(mfxFrameAllocResponse));
 
@@ -293,6 +292,42 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
                 attrib[attrCnt].flags           = VA_SURFACE_ATTRIB_SETTABLE;
                 attrib[attrCnt].value.type      = VAGenericValueTypeInteger;
                 attrib[attrCnt++].value.value.i = VA_SURFACE_ATTRIB_USAGE_HINT_ENCODER;
+
+    #if 1
+                if ((MFX_ERR_NONE == mfx_res) && (request->Type & MFX_MEMTYPE_EXPORT_FRAME)) {
+                    if (m_export_mode == vaapiAllocatorParams::DONOT_EXPORT) {
+                        mfx_res = MFX_ERR_UNKNOWN;
+                    }
+                    for (i = 0; i < surfaces_num; ++i) {
+                        if (m_export_mode & vaapiAllocatorParams::NATIVE_EXPORT_MASK) {
+                            vaapi_mids[i].m_buffer_info.mem_type =
+                                (m_export_mode & vaapiAllocatorParams::PRIME)
+                                    ? VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME
+                                    : VA_SURFACE_ATTRIB_MEM_TYPE_KERNEL_DRM;
+                        }
+                        if (m_exporter) {
+                            vaapi_mids[i].m_fourcc = va_fourcc;
+                            vaapi_mids[i].m_custom = m_exporter->acquire(&vaapi_mids[i]);
+
+                            attrib[attrCnt].type       = VASurfaceAttribMemoryType;
+                            attrib[attrCnt].flags      = VA_SURFACE_ATTRIB_SETTABLE;
+                            attrib[attrCnt].value.type = VAGenericValueTypeInteger;
+                            attrib[attrCnt++].value.value.i =
+                                VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2;
+
+                            attrib[attrCnt].type       = VASurfaceAttribExternalBufferDescriptor;
+                            attrib[attrCnt].flags      = VA_SURFACE_ATTRIB_SETTABLE;
+                            attrib[attrCnt].value.type = VAGenericValueTypePointer;
+                            attrib[attrCnt++].value.value.p = &vaapi_mids[i].m_prime_desc;
+
+                            if (!vaapi_mids[i].m_custom) {
+                                mfx_res = MFX_ERR_UNKNOWN;
+                                break;
+                            }
+                        }
+                    }
+                }
+    #endif
             }
 
             va_res = m_libva->vaCreateSurfaces(m_dpy,
@@ -343,6 +378,8 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
         }
     }
 
+    #if 0
+    VADRMPRIMESurfaceDescriptor prime_desc = {};
     if ((MFX_ERR_NONE == mfx_res) && (request->Type & MFX_MEMTYPE_EXPORT_FRAME)) {
         if (m_export_mode == vaapiAllocatorParams::DONOT_EXPORT) {
             mfx_res = MFX_ERR_UNKNOWN;
@@ -357,14 +394,14 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
 
                 if (MFX_ERR_NONE != mfx_res)
                     break;
-    #if 0
+        #if 0
                 va_res = m_libva->vaAcquireBufferHandle(m_dpy,
                                                         vaapi_mids[i].m_image.buf,
                                                         &(vaapi_mids[i].m_buffer_info));
 
                 mfx_res = va_to_mfx_status(va_res);
 		printf("[bkcheah] vaAcq FD: %ld >>\n",vaapi_mids[i].m_buffer_info.handle);
-    #endif
+        #endif
                 va_res = m_libva->vaExportSurfaceHandle(
                     m_dpy,
                     surfaces[i],
@@ -391,6 +428,7 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
             }
         }
     }
+    #endif
     if (MFX_ERR_NONE == mfx_res) {
         for (i = 0; i < surfaces_num; ++i) {
             vaapi_mid            = &(vaapi_mids[i]);
