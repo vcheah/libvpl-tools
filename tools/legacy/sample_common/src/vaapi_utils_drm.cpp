@@ -18,6 +18,23 @@
     #include "i915_drm.h"
     #include "vaapi_utils_drm.h"
 
+    #define TILE_Y 0
+    #if TILE_Y
+        #define TEST_W          1920
+        #define TEST_H          1080
+        #define TEST_TOTAL_SIZE 8355840
+        #define TEST_PITCH_0    7680
+        #define TEST_PITCH_1    0
+        #define TEST_OFFSET_1   0
+    #else
+        #define TEST_W          1920
+        #define TEST_H          1080
+        #define TEST_TOTAL_SIZE 8388608
+        #define TEST_PITCH_0    7680
+        #define TEST_PITCH_1    960
+        #define TEST_OFFSET_1   8355840
+    #endif
+
 constexpr mfxU32 MFX_DRI_MAX_NODES_NUM      = 16;
 constexpr mfxU32 MFX_DRI_RENDER_START_INDEX = 128;
 constexpr mfxU32 MFX_DRI_CARD_START_INDEX   = 0;
@@ -28,6 +45,11 @@ const char* MFX_DRM_INTEL_DRIVER_MTA_NAME   = "media_transcode_accelerator";
 const char* MFX_DRI_PATH                    = "/dev/dri/";
 const char* MFX_DRI_NODE_RENDER             = "renderD";
 const char* MFX_DRI_NODE_CARD               = "card";
+
+// Align helper
+static uint32_t align_up(uint32_t value, uint32_t align) {
+    return (value + align - 1) & ~(align - 1);
+}
 
 int get_drm_driver_name(int fd, char* name, int name_size) {
     drm_version_t version = {};
@@ -260,6 +282,16 @@ drmRenderer::~drmRenderer() {
     m_drmlib.drmModeFreeCrtc(m_crtc);
     m_drmlib.drmModeFreeObjectProperties(m_connectorProperties);
     m_drmlib.drmModeFreeObjectProperties(m_crtcProperties);
+
+    while (!m_gemBo_list.empty()) {
+        printf("bkcheah: call free. DRM. \n");
+        struct drm_gem_close close_main = { .handle = m_gemBo_list.front() };
+
+        if (ioctl(m_fd, DRM_IOCTL_GEM_CLOSE, &close_main))
+            printf("ERR: failed to close DRM GEM \n");
+
+        m_gemBo_list.pop_front();
+    }
 }
 
 drmModeObjectPropertiesPtr drmRenderer::getProperties(int fd, int objectId, int32_t objectTypeId) {
@@ -792,6 +824,51 @@ void* drmRenderer::acquire(mfxMemId mid) {
 
     if (vmid->m_buffer_info.mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME) {
         uint32_t bo_handle;
+
+        /////////////////////////////////////////////////////////////////////////////////////////
+        const uint32_t width = TEST_W, height = TEST_H;
+        const uint32_t format = DRM_FORMAT_ARGB8888;
+        uint32_t bo_handle2;
+    #if TILE_Y
+        const uint64_t modifier = I915_FORMAT_MOD_Y_TILED;
+        printf("✅ MOD_Y_TILED\n");
+    #else
+        const uint64_t modifier = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS;
+        printf("✅✅✅ CCS \n");
+    #endif
+
+        uint32_t stride     = align_up(width * 4, 64); // 4 bytes per pixel, align to 64
+        uint64_t total_size = TEST_TOTAL_SIZE;
+
+        struct drm_i915_gem_create total_create = { .size = total_size };
+        if (ioctl(m_fd, DRM_IOCTL_I915_GEM_CREATE, &total_create) < 0) {
+            printf("ERR: GEM_CREATE \n");
+            return NULL;
+        }
+        bo_handle2 = total_create.handle;
+
+        // ---- Set Tiling (Y-tiled) ----
+        struct drm_i915_gem_set_tiling tiling = {
+            .handle       = bo_handle2,
+            .tiling_mode  = I915_TILING_Y,
+            .swizzle_mode = I915_BIT_6_SWIZZLE_NONE,
+        };
+        tiling.stride = stride;
+
+        if (ioctl(m_fd, DRM_IOCTL_I915_GEM_SET_TILING, &tiling) < 0) {
+            printf("ERR: GEM_SET_TILING \n");
+            return NULL;
+        }
+
+        int prime_fd = -1;
+        if (m_drmintellib.drmPrimeHandleToFD(m_fd, bo_handle, O_RDWR, &prime_fd) == 1) {
+            printf("ERR: convert GEM to PRIME failed. \n");
+            return NULL;
+        }
+        printf("[bkcheah] [GEM] Exported PRIME FD = %d\n", prime_fd);
+
+        m_gemBo_list.push_back(bo_handle2);
+        /////////////////////////////////////////////////////////////////////////////////////////
 
         ret = m_drmintellib.drmPrimeFDToHandle(m_fd,
                                                (int)vmid->m_prime_desc.objects[0].fd,

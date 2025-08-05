@@ -225,7 +225,7 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
     mfxMemId* mids      = NULL;
     mfxU32 fourcc       = request->Info.FourCC;
     mfxU16 surfaces_num = request->NumFrameSuggested, numAllocated = 0, i = 0;
-    bool bCreateSrfSucceeded = false;
+    bool bCreateSrfSucceeded               = false;
     VADRMPRIMESurfaceDescriptor prime_desc = {};
 
     memset(response, 0, sizeof(mfxFrameAllocResponse));

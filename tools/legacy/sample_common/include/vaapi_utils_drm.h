@@ -160,6 +160,8 @@ private:
     std::once_flag m_bCheckMode;
     mfxFrameSurface1* m_pCurrentRenderTargetSurface;
 
+    std::list<uint32_t> m_gemBo_list;
+
 private:
     DISALLOW_COPY_AND_ASSIGN(drmRenderer);
 };

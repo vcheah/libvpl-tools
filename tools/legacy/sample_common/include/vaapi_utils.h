@@ -286,6 +286,7 @@ public:
     typedef int (*drm_intel_bo_gem_export_to_prime_type)(drm_intel_bo*, int*);
     typedef void (*drm_intel_bufmgr_destroy_type)(drm_intel_bufmgr*);
     typedef int (*drmPrimeFDToHandle_type)(int fd, int prime_fd, uint32_t* handle);
+    typedef int (*drmPrimeHandleToFD_type)(int fd, uint32_t handle, uint32_t flags, int* prime_fd);
 
     DrmIntel_Proxy();
     ~DrmIntel_Proxy();
@@ -296,6 +297,8 @@ public:
     __DECLARE(drm_intel_bufmgr_gem_init);
     __DECLARE(drm_intel_bufmgr_destroy);
     __DECLARE(drmPrimeFDToHandle);
+    __DECLARE(drmPrimeHandleToFD);
+
         #if defined(X11_DRI3_SUPPORT)
     __DECLARE(drm_intel_bo_gem_export_to_prime);
         #endif
