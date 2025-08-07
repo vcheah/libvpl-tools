@@ -140,13 +140,8 @@ DrmIntel_Proxy::DrmIntel_Proxy()
           SIMPLE_LOADER_FUNCTION(drm_intel_bufmgr_destroy),
           SIMPLE_LOADER_FUNCTION(drmPrimeFDToHandle),
           SIMPLE_LOADER_FUNCTION(drmPrimeHandleToFD),
-          SIMPLE_LOADER_FUNCTION(drm_intel_bo_alloc_tiled)
-        #if defined(X11_DRI3_SUPPORT)
-          ,
-          SIMPLE_LOADER_FUNCTION(drm_intel_bo_gem_export_to_prime)
-        #endif
-{
-}
+          SIMPLE_LOADER_FUNCTION(drm_intel_bo_alloc_tiled),
+          SIMPLE_LOADER_FUNCTION(drm_intel_bo_gem_export_to_prime) {}
 
 DRM_Proxy::~DRM_Proxy() {}
 

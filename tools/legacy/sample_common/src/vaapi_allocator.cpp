@@ -226,6 +226,7 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
     mfxU32 fourcc       = request->Info.FourCC;
     mfxU16 surfaces_num = request->NumFrameSuggested, numAllocated = 0, i = 0;
     bool bCreateSrfSucceeded = false;
+    bool bDMAImport          = false;
 
     memset(response, 0, sizeof(mfxFrameAllocResponse));
 
@@ -293,11 +294,17 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
                 attrib[attrCnt].value.type      = VAGenericValueTypeInteger;
                 attrib[attrCnt++].value.value.i = VA_SURFACE_ATTRIB_USAGE_HINT_ENCODER;
 
+                attrib[attrCnt].type            = VASurfaceAttribMemoryType;
+                attrib[attrCnt].flags           = VA_SURFACE_ATTRIB_SETTABLE;
+                attrib[attrCnt].value.type      = VAGenericValueTypeInteger;
+                attrib[attrCnt++].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2;
+
     #if 1
                 if ((MFX_ERR_NONE == mfx_res) && (request->Type & MFX_MEMTYPE_EXPORT_FRAME)) {
                     if (m_export_mode == vaapiAllocatorParams::DONOT_EXPORT) {
                         mfx_res = MFX_ERR_UNKNOWN;
                     }
+
                     for (i = 0; i < surfaces_num; ++i) {
                         if (m_export_mode & vaapiAllocatorParams::NATIVE_EXPORT_MASK) {
                             vaapi_mids[i].m_buffer_info.mem_type =
@@ -306,19 +313,26 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
                                     : VA_SURFACE_ATTRIB_MEM_TYPE_KERNEL_DRM;
                         }
                         if (m_exporter) {
+                            bDMAImport             = true;
                             vaapi_mids[i].m_fourcc = va_fourcc;
                             vaapi_mids[i].m_custom = m_exporter->acquire(&vaapi_mids[i]);
-
-                            attrib[attrCnt].type       = VASurfaceAttribMemoryType;
-                            attrib[attrCnt].flags      = VA_SURFACE_ATTRIB_SETTABLE;
-                            attrib[attrCnt].value.type = VAGenericValueTypeInteger;
-                            attrib[attrCnt++].value.value.i =
-                                VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2;
 
                             attrib[attrCnt].type       = VASurfaceAttribExternalBufferDescriptor;
                             attrib[attrCnt].flags      = VA_SURFACE_ATTRIB_SETTABLE;
                             attrib[attrCnt].value.type = VAGenericValueTypePointer;
                             attrib[attrCnt++].value.value.p = &vaapi_mids[i].m_prime_desc;
+
+                            va_res = m_libva->vaCreateSurfaces(m_dpy,
+                                                               format,
+                                                               request->Info.Width,
+                                                               request->Info.Height,
+                                                               &surfaces[i],
+                                                               1,
+                                                               &attrib[0],
+                                                               ((i > 1) ? attrCnt-- : attrCnt));
+
+                            mfx_res             = va_to_mfx_status(va_res);
+                            bCreateSrfSucceeded = (MFX_ERR_NONE == mfx_res);
 
                             if (!vaapi_mids[i].m_custom) {
                                 mfx_res = MFX_ERR_UNKNOWN;
@@ -330,17 +344,19 @@ mfxStatus vaapiFrameAllocator::AllocImpl(mfxFrameAllocRequest* request,
     #endif
             }
 
-            va_res = m_libva->vaCreateSurfaces(m_dpy,
-                                               format,
-                                               request->Info.Width,
-                                               request->Info.Height,
-                                               surfaces,
-                                               surfaces_num,
-                                               &attrib[0],
-                                               attrCnt);
+            if (fourcc != MFX_FOURCC_RGB4 && !bDMAImport) {
+                va_res = m_libva->vaCreateSurfaces(m_dpy,
+                                                   format,
+                                                   request->Info.Width,
+                                                   request->Info.Height,
+                                                   surfaces,
+                                                   surfaces_num,
+                                                   &attrib[0],
+                                                   attrCnt);
 
-            mfx_res             = va_to_mfx_status(va_res);
-            bCreateSrfSucceeded = (MFX_ERR_NONE == mfx_res);
+                mfx_res             = va_to_mfx_status(va_res);
+                bCreateSrfSucceeded = (MFX_ERR_NONE == mfx_res);
+            }
         }
         else {
             VAContextID context_id = request->AllocId;

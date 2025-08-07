@@ -307,10 +307,7 @@ public:
     __DECLARE(drmPrimeFDToHandle);
     __DECLARE(drmPrimeHandleToFD);
     __DECLARE(drm_intel_bo_alloc_tiled);
-
-        #if defined(X11_DRI3_SUPPORT)
     __DECLARE(drm_intel_bo_gem_export_to_prime);
-        #endif
 
         #undef __DECLARE
 };

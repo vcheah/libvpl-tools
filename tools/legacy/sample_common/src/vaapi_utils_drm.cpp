@@ -18,7 +18,8 @@
     #include "i915_drm.h"
     #include "vaapi_utils_drm.h"
 
-    #define TILE_Y 0
+    #define USE_LIBDRM 1
+    #define TILE_Y     0
     #if TILE_Y
         #define TEST_W          1920
         #define TEST_H          1080
@@ -288,6 +289,12 @@ drmRenderer::~drmRenderer() {
     m_drmlib.drmModeFreeCrtc(m_crtc);
     m_drmlib.drmModeFreeObjectProperties(m_connectorProperties);
     m_drmlib.drmModeFreeObjectProperties(m_crtcProperties);
+
+    while (!m_buffer_list.empty()) {
+        printf("bkcheah: call free. @unreference. \n");
+        m_drmintellib.drm_intel_bo_unreference(m_buffer_list.front());
+        m_buffer_list.pop_front();
+    }
 
     if (NULL != m_bufmgr) {
         printf("@free bufmgr\n");
@@ -838,16 +845,41 @@ void* drmRenderer::acquire(mfxMemId mid) {
         const uint32_t width = TEST_W, height = TEST_H;
         const uint32_t format = DRM_FORMAT_ARGB8888;
         uint32_t bo_handle2;
-    #if TILE_Y
-        const uint64_t modifier = I915_FORMAT_MOD_Y_TILED;
-        printf("✅ MOD_Y_TILED\n");
-    #else
-        const uint64_t modifier = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS;
-        printf("✅✅✅ CCS \n");
-    #endif
+        int prime_fd = -1;
 
-        uint32_t stride     = align_up(width * 4, 64); // 4 bytes per pixel, align to 64
         uint64_t total_size = TEST_TOTAL_SIZE;
+
+    #if USE_LIBDRM
+        long unsigned int stride;
+        unsigned int tiling_mode = I915_TILING_Y;
+        drm_intel_bo* bo;
+
+        bo = m_drmintellib.drm_intel_bo_alloc_tiled(m_bufmgr,
+                                                    "TILED",
+                                                    TEST_W,
+                                                    TEST_H,
+                                                    4,
+                                                    &tiling_mode,
+                                                    &stride,
+                                                    0);
+        if (!bo) {
+            printf(" ERR: Failed to allocate tiled buffer object\n");
+            m_drmintellib.drm_intel_bufmgr_destroy(m_bufmgr);
+            return NULL;
+        }
+
+        m_buffer_list.push_back(bo);
+
+        m_drmintellib.drm_intel_bo_gem_export_to_prime(bo, &prime_fd);
+        printf("[VINCENT] USE LIBDRM >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
+        printf("DRM-GEM-EXPORT: %d >>>\n", prime_fd);
+        printf("DRM-GEM-pitch: %ld >>>\n", stride);
+
+        total_size = bo->size;
+        bo_handle2 = bo->handle;
+
+    #else
+        uint32_t stride = align_up(width * 4, 64); // 4 bytes per pixel, align to 64
 
         struct drm_i915_gem_create total_create = { .size = total_size };
         if (ioctl(m_fd, DRM_IOCTL_I915_GEM_CREATE, &total_create) < 0) {
@@ -869,25 +901,34 @@ void* drmRenderer::acquire(mfxMemId mid) {
             return NULL;
         }
 
-        int prime_fd = -1;
-        if (m_drmintellib.drmPrimeHandleToFD(m_fd, bo_handle2, O_RDWR, &prime_fd) < 0) {
+        if (m_drmintellib.drmPrimeHandleToFD(m_fd, bo_handle2, DRM_CLOEXEC | O_RDWR, &prime_fd) <
+            0) {
             printf("ERR: convert GEM to PRIME failed. \n");
             return NULL;
         }
         printf("[bkcheah] [GEM] Exported PRIME FD = %d\n", prime_fd);
 
         m_gemBo_list.push_back(bo_handle2);
+    #endif
 
     #if TILE_Y
-        uint32_t handles[4]   = { bo_handle2, 0, 0, 0 };
-        uint32_t pitches[4]   = { TEST_PITCH_0, TEST_PITCH_1, 0, 0 };
-        uint32_t offsets[4]   = { 0, TEST_OFFSET_1, 0, 0 };
-        uint64_t modifiers[4] = { modifier, 0, 0, 0 };
+        const uint64_t modifier = I915_FORMAT_MOD_Y_TILED;
+        printf("✅ MOD_Y_TILED\n");
+
+        uint32_t handles[4]                     = { bo_handle2, 0, 0, 0 };
+        uint32_t pitches[4]                     = { TEST_PITCH_0, TEST_PITCH_1, 0, 0 };
+        uint32_t offsets[4]                     = { 0, TEST_OFFSET_1, 0, 0 };
+        uint64_t modifiers[4]                   = { modifier, 0, 0, 0 };
+        vmid->m_prime_desc.layers[0].num_planes = 1;
     #else
+        const uint64_t modifier = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS;
+        printf("✅✅✅ CCS \n");
+
         uint32_t handles[4]                     = { bo_handle2, bo_handle2, 0, 0 };
         uint32_t pitches[4]                     = { TEST_PITCH_0, TEST_PITCH_1, 0, 0 };
         uint32_t offsets[4]                     = { 0, TEST_OFFSET_1, 0, 0 };
         uint64_t modifiers[4]                   = { modifier, modifier, 0, 0 };
+        vmid->m_prime_desc.layers[0].num_planes = 2;
     #endif
 
         vmid->m_prime_desc.width = vmid->m_image.width = width;
@@ -898,11 +939,6 @@ void* drmRenderer::acquire(mfxMemId mid) {
         vmid->m_prime_desc.objects[0].size                = total_size;
         vmid->m_prime_desc.objects[0].drm_format_modifier = modifier;
         vmid->m_prime_desc.layers[0].drm_format           = format;
-    #if TILE_Y
-        vmid->m_prime_desc.layers[0].num_planes = 1;
-    #else
-        vmid->m_prime_desc.layers[0].num_planes = 2;
-    #endif
 
         for (unsigned int i = 0; i < vmid->m_prime_desc.layers[0].num_planes; i++) {
             vmid->m_prime_desc.layers[0].pitch[i]  = pitches[i];
