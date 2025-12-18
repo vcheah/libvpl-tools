@@ -116,6 +116,13 @@ private:
         #if defined(X11_DRI3_SUPPORT)
     xcb_connection_t* m_xcbconn;
         #endif
+
+    struct PixmapEntry {
+        int fd;
+        xcb_pixmap_t pixmap;
+    };
+    std::vector<PixmapEntry> m_pixmap_cache;
+
     // no copies allowed
     CVAAPIDeviceX11(const CVAAPIDeviceX11&);
     void operator=(const CVAAPIDeviceX11&);
